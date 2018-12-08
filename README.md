@@ -1,4 +1,4 @@
-# Pytorch 0.4 SSD learning annotation
+# Pytorch 0.4 SSD learning note
 Copy from https://github.com/TotallyFine/SSD-pytorch
 
 
