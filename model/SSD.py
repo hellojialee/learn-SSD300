@@ -1,8 +1,9 @@
 # coding:utf-8
 from torch import nn
 import torch.nn.functional as F
-from .MultiBox import MultiBoxLayer
+from MultiBox import MultiBoxLayer
 import math
+
 
 class L2Norm2d(nn.Module):
     """
@@ -10,20 +11,21 @@ class L2Norm2d(nn.Module):
     当从vgg中提取出特征以后需要对其进行L2Norm
     不过是针对没有Batch Norm的情况
     """
+
     def __init__(self, scale):
         super(L2Norm2d, self).__init__()
         self.scale = scale
-    
+
     def forward(self, x, dim=1):
         """
         out = scale * x / sqrt(sum x_i^2)
         Tensor.sum(dim)沿着这个维度进行求和，这个维度会缩减消失，假如原来是三维的w h z 沿着高z进行求和，则输出w h
         Tensor.clamp(max, min)将数据缩紧到[min, max]的范围内，这里是为了不除0
         Tensor.rsqrt() = 1/sqrt(Tensor)对每个维度每个元素都进行这样的操作
+        Tensor.unsqueeze()增加一个假的维度，因为pytorch的输入shape是(N, C, H, W)
         Tensor.expand_as(another Tensor) 将Tensor进行扩展
         """
-
-        return self.scale * x * x.pow(2).sum(dim).clamp(min=1e-12).rsqrt().unsqueeze(1).expand_as(x)
+        return self.scale * x * x.pow(2).sum(dim).clamp(min=1e-12).rsqrt().unsqueeze(1).expand_as(x)  # 优先级运算高于 *
 
 
 def conv3x3(in_channels, out_channels):
@@ -38,6 +40,7 @@ def conv3x3(in_channels, out_channels):
         nn.ReLU(inplace=True)
     )
 
+
 class VGG16(nn.Module):
     """
     基础的提取体征的网络vgg16，这里去掉了最后的classifier及倒数第一个maxpool
@@ -48,26 +51,25 @@ class VGG16(nn.Module):
     """
 
     def __init__(self):
-
         super(VGG16, self).__init__()
 
         self.features = nn.Sequential(
             conv3x3(3, 64),
             conv3x3(64, 64),
-            nn.MaxPool2d(kernel_size=2, stride=2), # (batch_size, 64, 150, 150)
-            
+            nn.MaxPool2d(kernel_size=2, stride=2),  # (batch_size, 64, 150, 150)
+
             conv3x3(64, 128),
             conv3x3(128, 128),
-            nn.MaxPool2d(kernel_size=2, stride=2), # (batch_size, 128, 75, 75)
-            
+            nn.MaxPool2d(kernel_size=2, stride=2),  # (batch_size, 128, 75, 75)
+
             conv3x3(128, 256),
             conv3x3(256, 256),
             conv3x3(256, 256),
-            nn.MaxPool2d(kernel_size=2, stride=2), # (batch_size, 256, 38, 38)
-            
+            nn.MaxPool2d(kernel_size=2, stride=2),  # (batch_size, 256, 37, 37), 想变成38*38可以使用　ceil_mode=True
+
             conv3x3(256, 512),
             conv3x3(512, 512),
-            conv3x3(512, 512),# (batch_size, 512, 38, 38)
+            conv3x3(512, 512),  # (batch_size, 512, 37, 37)
         )
         # if init_weights: 改为在SSD中进行初始化
         #    self._initialize_weights()
@@ -75,6 +77,7 @@ class VGG16(nn.Module):
     def forward(self, x):
         x = self.features(x)
         return x
+
 
 class SSD(nn.Module):
     def __init__(self, opt, init_weights=True):
@@ -86,70 +89,71 @@ class SSD(nn.Module):
         super(SSD, self).__init__()
         self.multibox = MultiBoxLayer(opt)
         self.num_classes = opt.num_classes
-        self.base = self.VGG16() # # (batch_size, 512, 38, 38)
+        self.base = self.VGG16()  # # (batch_size, 512, 38, 38)
         self.norm4 = L2Norm2d(20)
         # fc都属于feature extra layer用来得到不同scaling的feature
         self.conv5_1 = nn.Conv2d(512, 512, kernel_size=3, padding=1, dilation=1)
         self.conv5_2 = nn.Conv2d(512, 512, kernel_size=3, padding=1, dilation=1)
-        self.conv5_3 = nn.Conv2d(512, 512, kernel_size=3, padding=1, dilation=1) # maxpool 在forward中
-        
+        self.conv5_3 = nn.Conv2d(512, 512, kernel_size=3, padding=1, dilation=1)  # maxpool 在forward中
+
         # (H + 2*p - d(ks - 1) - 1) / 2 + 1
         # (38 + 12 - 6*(3 - 1) -1 ) / 2 + 1 = 19.5 向下取整 19
-        self.conv6 = nn.Conv2d(512, 1024, kernel_size=3, padding=6, dilation=6)# (batch_size, 1024, 19, 19)
+        self.conv6 = nn.Conv2d(512, 1024, kernel_size=3, padding=6, dilation=6)  # (batch_size, 1024, 19, 19)
+        # 原始VGG第六和第七层都是FC层，换成卷积层之后感受野就变小了，所以为了适应这种变化，这里采用了扩张率为6的卷积
 
-        self.conv7 = nn.Conv2d(1024, 1024, kernel_size=1)# (batch_size, 1024, 19, 19)
+        self.conv7 = nn.Conv2d(1024, 1024, kernel_size=1)  # (batch_size, 1024, 19, 19)
 
         self.conv8_1 = nn.Conv2d(1024, 256, kernel_size=1)
-        self.conv8_2 = nn.Conv2d(256, 512, kernel_size=3, padding=1, stride=2)# (batch_size, 512, 10, 10)
+        self.conv8_2 = nn.Conv2d(256, 512, kernel_size=3, padding=1, stride=2)  # (batch_size, 512, 10, 10)
 
         self.conv9_1 = nn.Conv2d(512, 128, kernel_size=1)
-        self.conv9_2 = nn.Conv2d(128, 256, kernel_size=3, padding=1, stride=2)# (batch_size, 256, 5, 5)
+        self.conv9_2 = nn.Conv2d(128, 256, kernel_size=3, padding=1, stride=2)  # (batch_size, 256, 5, 5), 向下取整
 
         self.conv10_1 = nn.Conv2d(256, 128, kernel_size=1)
-        self.conv10_2 = nn.Conv2d(128, 256, kernel_size=3)# (batch_size, 256, 3, 3)
+        self.conv10_2 = nn.Conv2d(128, 256, kernel_size=3)  # (batch_size, 256, 3, 3)
 
         self.conv11_1 = nn.Conv2d(256, 128, kernel_size=1)
-        self.conv11_2 = nn.Conv2d(128, 256, kernel_size=3)# (batch_size, 256, 3, 3)
-        
-        
+        self.conv11_2 = nn.Conv2d(128, 256, kernel_size=3)  # (batch_size, 256, 1, 1)
+
         if init_weights:
             self._initialize_weights()
-            
+
     def forward(self, x):
         hs = []
-        feature = self.base(x)
+        feature = self.base(x)  # conv4_3 , shape=38*38
         hs.append(self.norm4(feature))
-        
-        h = F.max_pool2d(feature, kernel_size=2, stride=2, ceil_mode=True)
+
+        h = F.max_pool2d(feature, kernel_size=2, stride=2, ceil_mode=True)  # ceil_mode = True是计算输出shape时向上取整
 
         h = F.relu(self.conv5_1(h))
         h = F.relu(self.conv5_2(h))
         h = F.relu(self.conv5_3(h))
         h = F.max_pool2d(h, kernel_size=3, padding=1, stride=1, ceil_mode=True)
+        # 以上这一段是vgg base net网络结束
 
         h = F.relu(self.conv6(h))
         h = F.relu(self.conv7(h))
-        hs.append(h)  # conv7
+        hs.append(h)  # conv7  , shape=19*19
 
         h = F.relu(self.conv8_1(h))
         h = F.relu(self.conv8_2(h))
-        hs.append(h)  # conv8_2
+        hs.append(h)  # conv8_2  , shape=10*10
 
         h = F.relu(self.conv9_1(h))
         h = F.relu(self.conv9_2(h))
-        hs.append(h)  # conv9_2
+        hs.append(h)  # conv9_2　 , shape=5*5
 
         h = F.relu(self.conv10_1(h))
         h = F.relu(self.conv10_2(h))
-        hs.append(h)  # conv10_2
+        hs.append(h)  # conv10_2,  shape=3*3
 
         h = F.relu(self.conv11_1(h))
         h = F.relu(self.conv11_2(h))
-        hs.append(h)  # conv11_2
+        hs.append(h)  # conv11_2,  shape=1*1
 
         loc_preds, conf_preds = self.multibox(hs)
         return loc_preds, conf_preds
-        
+
     def VGG16(self):
         '''VGG16 layers.'''
         cfg = [64, 64, 'M', 128, 128, 'M', 256, 256, 256, 'M', 512, 512, 512]
@@ -157,13 +161,13 @@ class SSD(nn.Module):
         in_channels = 3
         for x in cfg:
             if x == 'M':
-                layers += [nn.MaxPool2d(kernel_size=2, stride=2, ceil_mode=True)]
+                layers += [nn.MaxPool2d(kernel_size=2, stride=2, ceil_mode=True)]  #
             else:
                 layers += [nn.Conv2d(in_channels, x, kernel_size=3, padding=1),
                            nn.ReLU(True)]
                 in_channels = x
         return nn.Sequential(*layers)
-        
+
     def _initialize_weights(self):
         """
         对网络进行初始化
@@ -172,11 +176,20 @@ class SSD(nn.Module):
             # 卷积的初始化方法
             if isinstance(m, nn.Conv2d):
                 n = m.kernel_size[0] * m.kernel_size[1] * m.out_channels
-                m.weight.data.normal_(0, math.sqrt(2. / n))
+                m.weight.data.normal_(0, math.sqrt(2. / n))  # He, 方差为2/n.  或者直接使用现成的init函数
+                # torch.nn.init.uniform_(tensorx)
                 # bias都初始化为0
-                if m.bias is not None:
+                if m.bias is not None:  # 当有BN层时，不加bias！
                     m.bias.data.zero_()
             # batchnorm使用全1初始化 bias全0
             elif isinstance(m, nn.BatchNorm2d):
                 m.weight.data.fill_(1)
                 m.bias.data.zero_()
+
+
+# ###############3##### 打印网络每层的shape  #########################3
+# from torchsummary import summary
+# import torch
+# device = torch.device("cuda" if torch.cuda.is_available() else "cpu") # PyTorch v0.4.0
+# model = VGG16().to(device)
+# summary(model, (3, 300, 300))

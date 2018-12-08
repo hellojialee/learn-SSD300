@@ -3,14 +3,14 @@
 VGG model download from PyTorch model zoo: https://download.pytorch.org/models/vgg16-397923af.pth
 '''
 import torch
-
+from torchvision.models import vgg16
 from model import SSD
 from config import opt
 
 vgg = torch.load('../checkpoints/vgg16-397923af.pth')
 
 ssd = SSD(opt)
-layer_indices = [0,2,5,7,10,12,14,17,19,21]
+layer_indices = [0, 2, 5, 7, 10, 12, 14, 17, 19, 21]  # 这是因为只载入卷及层的权重，Relu, Maxpooing那些层是没有参数的
 
 for layer_idx in layer_indices:
     ssd.base[layer_idx].weight.data = vgg['features.%d.weight' % layer_idx]
@@ -24,4 +24,4 @@ ssd.conv5_2.bias.data = vgg['features.26.bias']
 ssd.conv5_3.weight.data = vgg['features.28.weight']
 ssd.conv5_3.bias.data = vgg['features.28.bias']
 
-torch.save(ssd.state_dict(), 'ssd.pth')
+torch.save(ssd.state_dict(), 'ssd.pth')  # state_dict() 仅保存和加载模型参数(推荐使用)

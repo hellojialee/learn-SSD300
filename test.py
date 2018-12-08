@@ -15,7 +15,7 @@ net.load_state_dict(torch.load(opt.ckpt_path)['net'])
 net.eval()
 
 # 加载测试图片
-img = Image.open('/home/j/MYSSD/pytorch-ssd-master/image/img1.jpg')
+img = Image.open('/home/jia/Desktop/SSD-pytorch/cocotry2.jpg')
 img1 = img.resize((300, 300))
 transform = tfs.Compose([tfs.ToTensor(), tfs.Normalize(mean=(0.485, 0.456, 0.406), std=(0.229, 0.224, 0.225))])
 

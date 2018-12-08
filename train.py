@@ -19,16 +19,18 @@ parser.add_argument('--lr', default=1e-3, type=float, help='learning rate')
 parser.add_argument('--resume', '-r', action='store_true', help='resume from checkpoint')
 args = parser.parse_args()
 
-use_cuda = torch.cuda.is_available()
+use_cuda = torch.cuda.is_available()  # 判断GPU cuda是否可用
 best_loss = float('inf')
-start_epoch = 0 # 从0开始或者从上一个epoch开始
+start_epoch = 0  # 从0开始或者从上一个epoch开始
 
 print('## Preparing data ##')
 # 对图片的变换
 transform = tfs.Compose([tfs.ToTensor(),
-    tfs.Normalize(mean=(0.485, 0.456, 0.406), std=(0.229, 0.224, 0.225))])
+                         tfs.Normalize(mean=(0.485, 0.456, 0.406), std=(0.229, 0.224, 0.225))])
 # 构建trainset trainloader testset testloader
 trainset = ImageSet(opt, transform, is_train=True)
+# Data loader. Combines a dataset and a sampler, and provides single- or multi-process iterators over the dataset
+# 通过自己定义的类和函数以及torchvision中的，此处返回的将是torch tensor类型的数据
 trainloader = torch.utils.data.DataLoader(trainset, batch_size=opt.batch_size, shuffle=True, num_workers=8)
 
 testset = ImageSet(opt, transform, is_train=False)
@@ -54,15 +56,16 @@ criterion = MultiBoxLoss()
 if use_cuda:
     net.cuda()
     criterion.cuda()
-    cudnn.benchmark = True
+    cudnn.benchmark = True  # 如果我们每次训练的输入数据的size不变，那么开启这个就会加快我们的训练速度
 optimizer = optim.SGD(net.parameters(), lr=args.lr, momentum=0.9, weight_decay=1e-4)
 print('## SSD Build success ##')
+torch.nn.MSELoss
 
-#for param in net.parameters():
+# for param in net.parameters():
 #    if param.requires_grad==True:
 #        print('param autograd')
 #        break
-    
+
 
 def train(epoch):
     print('\nTrain phase, Epoch: {}'.format(epoch))
@@ -81,7 +84,7 @@ def train(epoch):
         # loc_targets = Variable(loc_targets)
         # conf_targets = Variable(conf_targets)
 
-        optimizer.zero_grad()
+        optimizer.zero_grad()  # zero the gradient buff
         loc_preds, conf_preds = net(images)
         # print(loc_preds.requires_grad)
         # print(conf_preds.requires_grad)
@@ -90,14 +93,15 @@ def train(epoch):
         loss.backward()
         optimizer.step()
 
-        train_loss += loss.item() # 累加的loss
-        print('  Train loss: %.3f, accumulated average loss: %.3f' % (loss.item(), train_loss/(batch_idx+1)))
+        train_loss += loss.item()  # 累加的loss　　　fixme: detach??
+        print('  Train loss: %.3f, accumulated average loss: %.3f' % (loss.item(), train_loss / (batch_idx + 1)))
         return
+
 
 def test(epoch):
     print('\nTest phase, Epoch: {}'.format(epoch))
     net.eval()
-    test_loss = 0 
+    test_loss = 0
     for batch_idx, (images, loc_targets, conf_targets) in enumerate(testloader):
         images.requires_grad_()
         if use_cuda:
@@ -111,8 +115,8 @@ def test(epoch):
 
         loc_preds, conf_preds = net(images)
         loss = criterion(loc_preds, loc_targets, conf_preds, conf_targets)
-        test_loss += loss.item() # 累加的loss
-        print('  Test loss : %.3f, accumulated average loss: %.3f' % (loss.item(), test_loss/(batch_idx+1)))
+        test_loss += loss.item()  # 累加的loss
+        print('  Test loss : %.3f, accumulated average loss: %.3f' % (loss.item(), test_loss / (batch_idx + 1)))
 
     global best_loss
     test_loss /= len(testloader)
@@ -126,10 +130,11 @@ def test(epoch):
         }
         if not os.path.isdir('checkpoints'):
             os.mkdir('checkpoints')
-        torch.save(state, './checkpoints/SSD_'+str(epoch)+'epoch.pth')
+        torch.save(state, './checkpoints/SSD_' + str(epoch) + 'epoch.pth')
         best_loss = test_loss
 
+
 if __name__ == '__main__':
-    for epoch in range(start_epoch, start_epoch+200):
+    for epoch in range(start_epoch, start_epoch + 200):
         train(epoch)
         test(epoch)

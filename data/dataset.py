@@ -3,16 +3,18 @@ from __future__ import print_function
 import os
 import torch
 from torch.utils.data import Dataset
-
 from .Box import PriorBox
-
 from PIL import Image
-import random # for data argumentation
+import random  # for data argumentation
+
 
 class ImageSet(Dataset):
-    # 对于每个batch中的图片，产生这个图片中的ground truth对应的prior box，以及对应的laabel
+    """
+    用来处理batch个图片，而Box.py中定义的类是用来处理单张图片的
+    """
+    # 对于每个batch中的图片，产生这个图片中的ground truth对应的prior box，以及对应的label
     def __init__(self, opt, transform, is_train):
-        self.img_size = opt.img_size # 300 300
+        self.img_size = opt.img_size  # 300 300
         self.transform = transform
 
         # 如果是train阶段的话进行Crop等
@@ -38,24 +40,24 @@ class ImageSet(Dataset):
         for line in lines:
             splited = line.strip().split()
             self.fnames.append(splited[0])
-            # 一行（一张图片）可能会有多个物体
+            # 一行（一张图片）可能会有多个物体，那么一行的标注就是一个图片上的boxes
             num_objs = int(splited[1])
             box = []
             label = []
             for i in range(num_objs):
-                xmin = splited[2+5*i]
-                ymin = splited[3+5*i]
-                xmax = splited[4+5*i]
-                ymax = splited[5+5*i]
-                c = splited[6+5*i]
-                box.append([float(xmin),float(ymin),float(xmax),float(ymax)])
+                xmin = splited[2 + 5 * i]
+                ymin = splited[3 + 5 * i]
+                xmax = splited[4 + 5 * i]
+                ymax = splited[5 + 5 * i]
+                c = splited[6 + 5 * i]
+                box.append([float(xmin), float(ymin), float(xmax), float(ymax)])
                 label.append(int(c))
-            self.boxes.append(torch.Tensor(box)) # (img_num, num_obj, 4)
-            self.labels.append(torch.LongTensor(label)) # (img_num, num_obj, 1)
-        
+            self.boxes.append(torch.Tensor(box))  # (img_num, num_obj, 4)
+            self.labels.append(torch.LongTensor(label))  # (img_num, num_obj, 1)
+
     def __getitem__(self, index):
         """
-        加载一个图片到神经网络中去，同时产生default box
+        加载一个图片到神经网络中去，同时产生default box,  注意这里是一张一张图片处理的
         以及每个default box最匹配的label的class
         """
         fname = self.fnames[index]
@@ -66,23 +68,26 @@ class ImageSet(Dataset):
 
         # 在进行数据增强的时候，label box还没有被缩减到0-1之间
         if self.is_train:
-            img,boxes = self.random_flip(img, boxes)
+            img, boxes = self.random_flip(img, boxes)
             img, boxes, labels = self.random_crop(img, boxes, labels)
 
-        # 把xmin ymin xmax ymax缩减到0-1之间
+        # 把 ### xmin ymin xmax ymax ### 缩减到0-1之间
         # 这里得到的是w,h 但是在feature map中一般都是(batch_size, channel, h, w)
         # 因为内层是一行一行排起来的
         w, h = img.size
-        boxes /= torch.Tensor([w, h, w, h]).expand_as(boxes)
+        # 将boxes数据转换成tensor
+        boxes /= torch.Tensor([w, h, w, h]).expand_as(boxes)  # torch中的广播(broadcasting机制)
 
-        # rescale
+        # rescale, 对所有图片归一化到统一尺度　300*300　是为了可以成batch进行训练
         img = img.resize((self.img_size, self.img_size))
+        # 将图片数据转换成tensor,但是放在transform函数里进行，因为可以方便调用torchvision中的函数
         img = self.transform(img)
 
         # 产生default box并进行对应
         loc_target, conf_target = self.prior_box.match(boxes, labels)
+        # 返回default boxes对应的 ground truth
         return img, loc_target, conf_target
-    
+
     def __len__(self):
         return len(self.fnames)
 
@@ -90,7 +95,7 @@ class ImageSet(Dataset):
         """
         img: PIL.Image
         boxes: tensor (num, 4) 还未缩减到0-1之间
-        随机进行左右翻转
+        随机进行左右翻转，其实就是y不变，左右镜像x
         """
         if random.random() < 0.5:
             img = img.transpose(Image.FLIP_LEFT_RIGHT)
@@ -118,28 +123,28 @@ class ImageSet(Dataset):
 
             # 如果循环了100次都没有好的结果就不再进行crop
             for _ in range(100):
-                w = random.randrange(int(0.1*imw), imw)
-                h = random.randrange(int(0.1*imh), imh)
+                w = random.randrange(int(0.1 * imw), imw)
+                h = random.randrange(int(0.1 * imh), imh)
                 # 如果随机出来的h w不合理则再进行循环尝试
-                if h > 2*w or w > 2*h:
+                if h > 2 * w or w > 2 * h:  # 随机选择的h或者w大于图片尺寸
                     continue
 
                 x = random.randrange(imw - w)
                 y = random.randrange(imh - h)
                 # region of interest 随机出来的新的图片在原图上的位置
-                roi = torch.Tensor([[x, y, x+w, y+w]])
+                roi = torch.Tensor([[x, y, x + w, y + w]])  # (1, 4)
 
                 # 得到每个object的中心位置
-                center = (boxes[:, :2] + boxes[:, 2:]) / 2 # (num, 2)
+                center = (boxes[:, :2] + boxes[:, 2:]) / 2  # (num, 2)
                 # 把roi进行重复，重复到len(center)个
-                roi2 = roi.expand(len(center), 4) # (num, 4)
+                roi2 = roi.expand(len(center), 4)  # (num, 4)，注意图像坐标系的原点在左上角
                 # center > roi2[:, :2]得到一个bool矩阵，每个object的
                 # center是否大于随机出来的框的xmax ymax
                 # center < roi2[:, 2:]得到一个bool矩阵，每个object的
                 # center是否小于随机出来的框的xmin ymin
                 # 两个布尔矩阵再进行与操作，得到哪些object的x y不在随机出的框内
-                mask = (center > roi2[:, :2]) & (center < roi2[:, 2:]) # (num, 2)
-                mask = mask[:, 0] & mask[:, 1] # (num,)
+                mask = (center > roi2[:, :2]) & (center < roi2[:, 2:])  # (num, 2)
+                mask = mask[:, 0] & mask[:, 1]  # (num,), 结合center的x,y两个坐标的mask
                 # 如果有所有object的中心落在了随机出来的框的外面则舍弃这次随机的结果再次循环
                 if not mask.any():
                     continue
@@ -149,14 +154,14 @@ class ImageSet(Dataset):
 
                 # 计算center落在框内的box和框的iou，如果iou太小则重新进行随机
                 iou = self.prior_box.iou(selected_boxes, roi)
-                if iou.min() < min_iou:
+                if iou.min() < min_iou:  # tensor.min()返回所有张量元素中最小的值
                     continue
 
                 # 将图片进行crop
-                img = img.crop((x, y, x+w, y+h))
+                img = img.crop((x, y, x + w, y + h))
                 # 将center落在随机出来的框的box的边界缩减到框内
-                selected_boxes[:,0].add_(-x).clamp_(min=0, max=w)
-                selected_boxes[:,1].add_(-y).clamp_(min=0, max=h)
-                selected_boxes[:,2].add_(-x).clamp_(min=0, max=w)
-                selected_boxes[:,3].add_(-y).clamp_(min=0, max=h)
+                selected_boxes[:, 0].add_(-x).clamp_(min=0, max=w)
+                selected_boxes[:, 1].add_(-y).clamp_(min=0, max=h)
+                selected_boxes[:, 2].add_(-x).clamp_(min=0, max=w)
+                selected_boxes[:, 3].add_(-y).clamp_(min=0, max=h)
                 return img, selected_boxes, labels[mask]
