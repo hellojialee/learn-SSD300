@@ -1,3 +1,7 @@
+# Pytorch 0.4 SSD learning annotation
+Copy from https://github.com/TotallyFine/SSD-pytorch
+
+
 ## SSD Pytorch
 
 SSD300的代码，论文地址[Single Shot MultiBox Detector](https://arxiv.org/abs/1512.02325)。代码主要是参考了[pytorch-ssd](https://github.com/kuangliu/pytorch-ssd)，
@@ -15,13 +19,4 @@ SSD300的代码，论文地址[Single Shot MultiBox Detector](https://arxiv.org/
  - pytorch 0.4.0
  - torchvision 0.2.1
  - python 2.7
- 
-<img src="http://latex.codecogs.com/svg.latex?%5Cbegin%7Bmatrix%7D%0Af%20&amp;=%20&amp;2%20%2B%20x%20%2B%203%20%5C%5C%0A&amp;=%20&amp;5%20%2B%20x%20%5C%5C%0A%5Cend%7Bmatrix%7D%0A" alt="LaTex Embedded Image" />
 
-
-<script type="text/x-mathjax-config">
-    MathJax.Hub.Config({tex2jax: {inlineMath: [['$','$'], ['\\(','\\)']]}});
-</script>
-<script type="text/javascript"
-        src="https://cdnjs.cloudflare.com/ajax/libs/mathjax/2.7.1/MathJax.js?config=TeX-MML-AM_CHTML">
-</script>
