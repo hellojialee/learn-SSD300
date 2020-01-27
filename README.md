@@ -1,5 +1,6 @@
 # Pytorch 0.4 SSD learning note
 Copy from https://github.com/TotallyFine/SSD-pytorch
+Chinese bolg: https://zhuanlan.zhihu.com/p/42322126
 
 
 ## SSD Pytorch
