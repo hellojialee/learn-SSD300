@@ -1,7 +1,7 @@
 # coding:utf-8
 from torch import nn
 import torch.nn.functional as F
-from MultiBox import MultiBoxLayer
+from .MultiBox import MultiBoxLayer
 import math
 
 

@@ -4,6 +4,7 @@ import os
 import argparse
 
 import torch
+from torch.utils.data import DataLoader
 import torch.optim as optim
 import torch.nn.functional as F
 import torch.backends.cudnn as cudnn
@@ -31,10 +32,10 @@ transform = tfs.Compose([tfs.ToTensor(),
 trainset = ImageSet(opt, transform, is_train=True)
 # Data loader. Combines a dataset and a sampler, and provides single- or multi-process iterators over the dataset
 # 通过自己定义的类和函数以及torchvision中的，此处返回的将是torch tensor类型的数据
-trainloader = torch.utils.data.DataLoader(trainset, batch_size=opt.batch_size, shuffle=True, num_workers=8)
+trainloader = DataLoader(trainset, batch_size=opt.batch_size, shuffle=True, num_workers=8)
 
 testset = ImageSet(opt, transform, is_train=False)
-testloader = torch.utils.data.DataLoader(testset, batch_size=opt.batch_size, shuffle=False, num_workers=8)
+testloader = DataLoader(testset, batch_size=opt.batch_size, shuffle=False, num_workers=8)
 print('## Data preparation finish ##')
 
 print('## Building net : SSD300 ##')
@@ -59,7 +60,6 @@ if use_cuda:
     cudnn.benchmark = True  # 如果我们每次训练的输入数据的size不变，那么开启这个就会加快我们的训练速度
 optimizer = optim.SGD(net.parameters(), lr=args.lr, momentum=0.9, weight_decay=1e-4)
 print('## SSD Build success ##')
-torch.nn.MSELoss
 
 # for param in net.parameters():
 #    if param.requires_grad==True:
@@ -72,7 +72,7 @@ def train(epoch):
     net.train()
     train_loss = 0
     for batch_idx, (images, loc_targets, conf_targets) in enumerate(trainloader):
-        images.requires_grad_()
+        # images.requires_grad_()
         # loc_targets.requires_grad_()
         # conf_targets.requires_grad_()
         if use_cuda:
@@ -93,7 +93,9 @@ def train(epoch):
         loss.backward()
         optimizer.step()
 
-        train_loss += loss.item()  # 累加的loss　　　fixme: detach??
+        train_loss += loss.item()  # 累加的loss　　　
+        # 使用loss += loss.detach()来获取不需要梯度回传的部分。
+        # 或者使用loss.item()直接获得所对应的python数据类型。
         print('  Train loss: %.3f, accumulated average loss: %.3f' % (loss.item(), train_loss / (batch_idx + 1)))
         return
 
